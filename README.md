@@ -53,7 +53,7 @@ $ curl -X POST localhost:8000/ask -H 'Content-Type: application/json' -d '{"ques
 
 <img width="1229" height="116" alt="image" src="https://github.com/user-attachments/assets/9424d0db-2e6b-4364-8269-8fefa7efa799" />
 
-Repositório: _[LINK DO REPOSITÓRIO]_
+Repositório: https://github.com/sergiomirabelo/gs-software-engineer.git
 
 ## Decisões principais
 Resumo (detalhes em `3_arquitetura.md`): porta própria para a IA (ADR-001), prompt ancorado em dados em vez de RAG (ADR-002), `fake` por padrão e Ollama opcional (ADR-003), contrato antes do código com teste de contrato automatizado (ADR-004). Docker Compose e teste de contrato (schema × resposta) estão incluídos como extras.
