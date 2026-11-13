@@ -1,0 +1,197 @@
+openapi: 3.1.0
+info:
+  title: CitizenTech Mobilidade API
+  version: 1.0.0
+  description: >
+    Serviço da Secretaria de Mobilidade para consulta de pontos de ônibus com status e
+    alternativa, e perguntas em linguagem natural respondidas por IA ancorada na base oficial.
+    Contrato escrito ANTES do código (spec-driven); o slice em 4_slice/ deve segui-lo.
+servers:
+  - url: http://localhost:8000
+tags:
+  - name: stops
+    description: Consulta de pontos
+  - name: assistant
+    description: Perguntas em linguagem natural
+  - name: ops
+    description: Operação e monitoramento
+paths:
+  /health:
+    get:
+      tags: [ops]
+      operationId: getHealth
+      summary: Verifica se o serviço está de pé (usado pelo alerta de disponibilidade)
+      responses:
+        "200":
+          description: Serviço saudável
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /stops:
+    get:
+      tags: [stops]
+      operationId: listStops
+      summary: Lista pontos com paginação por limit/offset (idempotente, somente leitura)
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/StopStatus"
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: Página de pontos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StopPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /stops/{stop_id}:
+    get:
+      tags: [stops]
+      operationId: getStop
+      summary: Consulta um ponto pelo identificador (idempotente, somente leitura)
+      parameters:
+        - name: stop_id
+          in: path
+          required: true
+          schema: { type: string, examples: ["pt-003"] }
+      responses:
+        "200":
+          description: Ponto encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stop"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /ask:
+    post:
+      tags: [assistant]
+      operationId: askAssistant
+      summary: >
+        Pergunta em linguagem natural. Semanticamente idempotente (não altera estado);
+        usa POST por causa do corpo. Sem dado na base, responde refused=true sem chamar a IA.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AskRequest"
+      responses:
+        "200":
+          description: Resposta (ou recusa) da IA
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AskResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+components:
+  responses:
+    BadRequest:
+      description: Parâmetro de query inválido
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Ponto inexistente
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unprocessable:
+      description: Corpo inválido (campo ausente, vazio ou acima de 500 caracteres)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServiceUnavailable:
+      description: Provedor de IA indisponível ou com timeout
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    StopStatus:
+      type: string
+      enum: [OPERATING, DELAYED, SUSPENDED]
+    Stop:
+      type: object
+      additionalProperties: false
+      required: [id, name, lines, status, alternative_stop_id, note]
+      properties:
+        id: { type: string, examples: ["pt-003"] }
+        name: { type: string, examples: ["Praça da Sé"] }
+        lines:
+          type: array
+          items: { type: string }
+        status:
+          $ref: "#/components/schemas/StopStatus"
+        alternative_stop_id:
+          type: [string, "null"]
+          description: Ponto alternativo quando o status não é OPERATING
+        note:
+          type: [string, "null"]
+    StopPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, limit, offset, next_offset]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Stop" }
+        total: { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1, maximum: 50 }
+        offset: { type: integer, minimum: 0 }
+        next_offset:
+          type: [integer, "null"]
+          description: Offset da próxima página; null na última
+    AskRequest:
+      type: object
+      additionalProperties: false
+      required: [question]
+      properties:
+        question: { type: string, minLength: 3, maxLength: 500 }
+        stop_id:
+          type: [string, "null"]
+          description: Se omitido, o serviço tenta identificar o ponto pelo texto
+    AskResponse:
+      type: object
+      additionalProperties: false
+      required: [answer, stop_id, refused]
+      properties:
+        answer: { type: string }
+        stop_id: { type: [string, "null"] }
+        refused:
+          type: boolean
+          description: true quando o serviço recusou (sem dado na base ou guardrail de PII)
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok] }
+    Error:
+      type: object
+      additionalProperties: false
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          enum: [BAD_REQUEST, NOT_FOUND, UNPROCESSABLE_ENTITY, SERVICE_UNAVAILABLE]
+        message: { type: string }
+        details:
+          type: array
+          items: { type: string }
